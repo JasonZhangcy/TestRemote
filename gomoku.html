@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋 - 人机对战</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Microsoft YaHei', sans-serif;
+            padding: 20px;
+        }
+
+        h1 {
+            color: white;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .game-container {
+            background: #f5f5dc;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .info-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            background: rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+
+        .status {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-restart {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-restart:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+
+        #board {
+            background: #dcb35c;
+            border: 3px solid #8b4513;
+            cursor: pointer;
+        }
+
+        .game-over-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .game-over-dialog {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            animation: popup 0.3s ease-out;
+        }
+
+        @keyframes popup {
+            from {
+                transform: scale(0.5);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .game-over-dialog h2 {
+            font-size: 28px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .game-over-dialog .btn {
+            margin-top: 10px;
+            background: #667eea;
+            color: white;
+            padding: 12px 30px;
+        }
+
+        .game-over-dialog .btn:hover {
+            background: #5a6fd6;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.black {
+            background: radial-gradient(circle at 30% 30%, #666, #000);
+        }
+
+        .legend-dot.white {
+            background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+            border: 1px solid #999;
+        }
+    </style>
+</head>
+<body>
+    <h1>五子棋 - 人机对战</h1>
+    <div class="game-container">
+        <div class="info-bar">
+            <span class="status" id="status">你的回合 (黑棋)</span>
+            <button class="btn btn-restart" onclick="restartGame()">重新开始</button>
+        </div>
+        <canvas id="board"></canvas>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-dot black"></div>
+                <span>你 (黑棋)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot white"></div>
+                <span>电脑 (白棋)</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="game-over-overlay" id="gameOverOverlay">
+        <div class="game-over-dialog">
+            <h2 id="gameOverText">游戏结束</h2>
+            <button class="btn" onclick="restartGame()">再来一局</button>
+        </div>
+    </div>
+
+    <script>
+        // 游戏配置
+        const BOARD_SIZE = 15;
+        const CELL_SIZE = 36;
+        const PADDING = 25;
+        const PIECE_RADIUS = 15;
+
+        // 游戏状态
+        const EMPTY = 0;
+        const BLACK = 1; // 玩家
+        const WHITE = 2; // AI
+
+        // 全局变量
+        let board = [];
+        let gameOver = false;
+        let playerTurn = true;
+        let canvas, ctx;
+
+        // 初始化
+        function init() {
+            canvas = document.getElementById('board');
+            ctx = canvas.getContext('2d');
+            
+            const boardPixelSize = (BOARD_SIZE - 1) * CELL_SIZE + PADDING * 2;
+            canvas.width = boardPixelSize;
+            canvas.height = boardPixelSize;
+
+            canvas.addEventListener('click', handleClick);
+            
+            restartGame();
+        }
+
+        // 重新开始游戏
+        function restartGame() {
+            board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(EMPTY));
+            gameOver = false;
+            playerTurn = true;
+            document.getElementById('gameOverOverlay').style.display = 'none';
+            updateStatus('你的回合 (黑棋)');
+            drawBoard();
+        }
+
+        // 绘制棋盘
+        function drawBoard() {
+            // 背景
+            ctx.fillStyle = '#dcb35c';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 网格线
+            ctx.strokeStyle = '#8b4513';
+            ctx.lineWidth = 1;
+
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                // 横线
+                ctx.beginPath();
+                ctx.moveTo(PADDING, PADDING + i * CELL_SIZE);
+                ctx.lineTo(PADDING + (BOARD_SIZE - 1) * CELL_SIZE, PADDING + i * CELL_SIZE);
+                ctx.stroke();
+
+                // 竖线
+                ctx.beginPath();
+                ctx.moveTo(PADDING + i * CELL_SIZE, PADDING);
+                ctx.lineTo(PADDING + i * CELL_SIZE, PADDING + (BOARD_SIZE - 1) * CELL_SIZE);
+                ctx.stroke();
+            }
+
+            // 星位点
+            const starPoints = [3, 7, 11];
+            ctx.fillStyle = '#8b4513';
+            for (let i of starPoints) {
+                for (let j of starPoints) {
+                    ctx.beginPath();
+                    ctx.arc(PADDING + i * CELL_SIZE, PADDING + j * CELL_SIZE, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // 绘制棋子
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                for (let j = 0; j < BOARD_SIZE; j++) {
+                    if (board[i][j] !== EMPTY) {
+                        drawPiece(i, j, board[i][j]);
+                    }
+                }
+            }
+        }
+
+        // 绘制棋子
+        function drawPiece(row, col, type) {
+            const x = PADDING + col * CELL_SIZE;
+            const y = PADDING + row * CELL_SIZE;
+
+            ctx.beginPath();
+            ctx.arc(x, y, PIECE_RADIUS, 0, Math.PI * 2);
+
+            if (type === BLACK) {
+                const gradient = ctx.createRadialGradient(x - 5, y - 5, 0, x, y, PIECE_RADIUS);
+                gradient.addColorStop(0, '#666');
+                gradient.addColorStop(1, '#000');
+                ctx.fillStyle = gradient;
+            } else {
+                const gradient = ctx.createRadialGradient(x - 5, y - 5, 0, x, y, PIECE_RADIUS);
+                gradient.addColorStop(0, '#fff');
+                gradient.addColorStop(1, '#ccc');
+                ctx.fillStyle = gradient;
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+            ctx.fill();
+        }
+
+        // 处理点击
+        function handleClick(e) {
+            if (gameOver || !playerTurn) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            const col = Math.round((x - PADDING) / CELL_SIZE);
+            const row = Math.round((y - PADDING) / CELL_SIZE);
+
+            if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return;
+            if (board[row][col] !== EMPTY) return;
+
+            // 玩家落子
+            makeMove(row, col, BLACK);
+
+            if (checkWin(row, col, BLACK)) {
+                endGame('恭喜你赢了！');
+                return;
+            }
+
+            if (isBoardFull()) {
+                endGame('平局！');
+                return;
+            }
+
+            // AI回合
+            playerTurn = false;
+            updateStatus('电脑思考中...');
+            
+            setTimeout(() => {
+                aiMove();
+            }, 300);
+        }
+
+        // 落子
+        function makeMove(row, col, type) {
+            board[row][col] = type;
+            drawPiece(row, col, type);
+        }
+
+        // AI落子
+        function aiMove() {
+            const move = getBestMove();
+            if (move) {
+                makeMove(move.row, move.col, WHITE);
+
+                if (checkWin(move.row, move.col, WHITE)) {
+                    endGame('电脑赢了！');
+                    return;
+                }
+
+                if (isBoardFull()) {
+                    endGame('平局！');
+                    return;
+                }
+            }
+
+            playerTurn = true;
+            updateStatus('你的回合 (黑棋)');
+        }
+
+        // AI策略：评分系统
+        function getBestMove() {
+            let bestScore = -Infinity;
+            let bestMoves = [];
+
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                for (let j = 0; j < BOARD_SIZE; j++) {
+                    if (board[i][j] === EMPTY) {
+                        const score = evaluatePosition(i, j);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestMoves = [{row: i, col: j}];
+                        } else if (score === bestScore) {
+                            bestMoves.push({row: i, col: j});
+                        }
+                    }
+                }
+            }
+
+            if (bestMoves.length === 0) return null;
+            return bestMoves[Math.floor(Math.random() * bestMoves.length)];
+        }
+
+        // 评估位置分数
+        function evaluatePosition(row, col) {
+            // AI进攻分数
+            const attackScore = getPositionScore(row, col, WHITE);
+            // 防守分数（阻止玩家）
+            const defenseScore = getPositionScore(row, col, BLACK);
+            
+            // 进攻优先，但也要防守
+            return Math.max(attackScore, defenseScore * 0.9) + attackScore * 0.1;
+        }
+
+        // 获取位置分数
+        function getPositionScore(row, col, type) {
+            const directions = [
+                [0, 1],   // 水平
+                [1, 0],   // 垂直
+                [1, 1],   // 对角线
+                [1, -1]   // 反对角线
+            ];
+
+            let totalScore = 0;
+
+            for (const [dx, dy] of directions) {
+                const lineInfo = analyzeDirection(row, col, dx, dy, type);
+                totalScore += calculateLineScore(lineInfo);
+            }
+
+            // 中心位置加分
+            const centerBonus = (7 - Math.abs(row - 7)) + (7 - Math.abs(col - 7));
+            totalScore += centerBonus;
+
+            return totalScore;
+        }
+
+        // 分析方向上的棋型
+        function analyzeDirection(row, col, dx, dy, type) {
+            let count = 1;
+            let openEnds = 0;
+            let blocked = false;
+
+            // 正方向
+            let r = row + dx;
+            let c = col + dy;
+            while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === type) {
+                count++;
+                r += dx;
+                c += dy;
+            }
+            if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === EMPTY) {
+                openEnds++;
+            }
+
+            // 反方向
+            r = row - dx;
+            c = col - dy;
+            while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === type) {
+                count++;
+                r -= dx;
+                c -= dy;
+            }
+            if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === EMPTY) {
+                openEnds++;
+            }
+
+            return { count, openEnds };
+        }
+
+        // 根据棋型计算分数
+        function calculateLineScore(info) {
+            const { count, openEnds } = info;
+
+            if (count >= 5) return 100000;
+            
+            if (count === 4) {
+                if (openEnds === 2) return 10000;
+                if (openEnds === 1) return 5000;
+                return 0;
+            }
+            
+            if (count === 3) {
+                if (openEnds === 2) return 1000;
+                if (openEnds === 1) return 100;
+                return 0;
+            }
+            
+            if (count === 2) {
+                if (openEnds === 2) return 50;
+                if (openEnds === 1) return 10;
+                return 0;
+            }
+            
+            if (count === 1) {
+                if (openEnds === 2) return 5;
+                if (openEnds === 1) return 1;
+            }
+            
+            return 0;
+        }
+
+        // 检查胜利
+        function checkWin(row, col, type) {
+            const directions = [
+                [0, 1],   // 水平
+                [1, 0],   // 垂直
+                [1, 1],   // 对角线
+                [1, -1]   // 反对角线
+            ];
+
+            for (const [dx, dy] of directions) {
+                let count = 1;
+
+                // 正方向
+                let r = row + dx;
+                let c = col + dy;
+                while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === type) {
+                    count++;
+                    r += dx;
+                    c += dy;
+                }
+
+                // 反方向
+                r = row - dx;
+                c = col - dy;
+                while (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === type) {
+                    count++;
+                    r -= dx;
+                    c -= dy;
+                }
+
+                if (count >= 5) return true;
+            }
+
+            return false;
+        }
+
+        // 检查棋盘是否满
+        function isBoardFull() {
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                for (let j = 0; j < BOARD_SIZE; j++) {
+                    if (board[i][j] === EMPTY) return false;
+                }
+            }
+            return true;
+        }
+
+        // 更新状态
+        function updateStatus(text) {
+            document.getElementById('status').textContent = text;
+        }
+
+        // 结束游戏
+        function endGame(message) {
+            gameOver = true;
+            updateStatus(message);
+            document.getElementById('gameOverText').textContent = message;
+            document.getElementById('gameOverOverlay').style.display = 'flex';
+        }
+
+        // 启动游戏
+        window.onload = init;
+    </script>
+</body>
+</html>
